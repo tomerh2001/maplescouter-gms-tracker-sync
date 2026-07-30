@@ -31,11 +31,13 @@ two origins with Tampermonkey's script-scoped `GM_setValue`/`GM_getValue`
 storage (shared across both `@match` domains):
 
 - Each site **mirrors** its state into GM storage while you browse it.
-- A **Save** button converts the current site's state and queues a pending
-  payload for the other site.
-- The other site **applies** the payload on its next load — or instantly via
-  `GM_addValueChangeListener` if a tab is already open — after a confirmation,
-  then reloads (mirroring both sites' native import behavior).
+- A **Save** button queues a raw snapshot of the current site's state for the
+  other site.
+- The other site **converts and applies** the snapshot against its own live
+  state — on its next load, or instantly via `GM_addValueChangeListener` if a
+  visible tab is already open — after a confirmation, then reloads (mirroring
+  both sites' native import behavior). Cancelling parks the payload behind the
+  ⇄ Sync panel's Apply/Discard buttons instead of re-prompting forever.
 
 Because the bridge is the userscript's storage, no server, account, or
 extension is involved, and nothing leaves your browser.
@@ -43,11 +45,15 @@ extension is involved, and nothing leaves your browser.
 ### What is synced
 
 Character stats (main/sub/third stat base–%–flat, ATT base/%, damage, boss
-damage, IED, crit rate/damage), level, class, Arcane/Sacred force, and HEXA
-progress (skill/mastery/boost/common cores incl. Sol Janus). Class names are
-translated between the tracker's English names and MapleScouter's internal
-Korean identifiers; `weaponMultiplier`/`statModel` are recomputed for the
-tracker on import.
+damage, IED, crit rate/damage, abnormal-status damage, buff duration,
+elemental-resist ignore, summon duration), level, class, Arcane/Sacred force,
+Reboot/heroic flag (tracker→scouter), and HEXA progress (skill/mastery/boost/
+common cores incl. Sol Janus). Class names are translated between the
+tracker's English names and MapleScouter's internal Korean identifiers;
+`weaponMultiplier`/`statModel` are recomputed for the tracker on import. The
+tracker's *assumed* crit rate placeholder is never exported as a real value,
+and hexa skill slots the tracker cannot represent (3rd+ origin skill) never
+overwrite what you entered on MapleScouter.
 
 ### What is not synced
 

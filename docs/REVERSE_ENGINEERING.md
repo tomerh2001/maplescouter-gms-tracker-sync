@@ -103,12 +103,36 @@ both bundles):
 | `totalATT` / `totalPercentATT` | `atkBase` / `atkPercent` (+ `atkAbs`) | tracker has no flat-ATT field; importing folds `atkAbs/(1+atkPercent/100)` into `totalATT` so effective ATT is preserved; exporting sets `atkAbs="0"` |
 | `damagePercent` / `bossDamagePercent` | `dmg` / `bossDmg` | 1:1 |
 | `ied` (0–1) | `ignoreDef` (0–100) | ×100 / ÷100, clamp |
-| `critRatePercent` (+`critRateAssumed`) | `critical` | import sets `critRateAssumed:false` when `critical>0` |
+| `critRatePercent` (+`critRateAssumed`) | `critical` | import sets `critRateAssumed:false` when `critical>0`; export keeps the scouter value when the tracker's rate is *assumed* (its placeholder-100 state) |
 | `critDamagePercent` | `criticalDmg` | 1:1 |
 | `arcanePower` / `sacredPower` | `arcaneForce` / `authenticForce` | number\|null ↔ string |
-| `hexaProgress` (+`hexaAssumptionMode:"explicit"`) | `hexa.*` + `huntSkill.solJanus` | table above |
-| `weaponMultiplier`, `statModel` | — | recomputed from embedded `CLASS_CONFIGS` on import |
+| `abnormalStatusDamage` | `statusAdditionalDmg` | 1:1 |
+| `buffDuration` | `buffDuration` | 1:1 |
+| `ignoreElementalResistance` | `ignoreElementalResist` | 1:1 |
+| `summonDuration` | `summonPersistTime` | 1:1 |
+| settings-store `serverType` | `special.isReboot` | one-way tracker→scouter (`heroic`→true, `interactive`→false); the sync never writes the tracker's settings store |
+| `hexaProgress` (+`hexaAssumptionMode:"explicit"`) | `hexa.*` + `huntSkill.solJanus` | table above; a `null` tracker skill node (the tracker only models 2 origin skills; indices 2–5 are always null) keeps the scouter's own `skillCore3+` value instead of zeroing it; a class change without a hexa payload clears the tracker's old-class `hexaProgress` (mirroring the tracker's own class-change flow) |
+| `weaponMultiplier`, `statModel` | — | recomputed from embedded `CLASS_CONFIGS` on import; left untouched when the scouter class has no tracker equivalent |
 | `finalDamagePercent`, `gear`, `characterName`, `wildcardSpares`, `ozRingState` | `doping`, `linkSkill`, `special`, `seedRing`, `entireStat`, `power`, remaining `stat` fields | **never overwritten** — each side keeps its own; exports merge on top of the last-mirrored other-side state (or the verbatim default template) |
 
 Region flags: exported presets set `isGMS:true` (this tracker is GMS-only);
 the scouter input page re-syncs the flags from its own `region` store on mount.
+
+Level: a tracker export falls back to the base preset's `level` when the
+tracker's `characterLevel` is unset, and the tracker-side save flow requires a
+set level — the scouter UI treats `level:"0"` presets as unloadable (its Load
+button is `disabled` for them).
+
+## Sync mechanics (userscript)
+
+Pending payloads in GM storage carry **raw source snapshots**, not converted
+data; conversion runs at *apply* time against the target site's live state, so
+unmapped fields always merge onto fresh data rather than a stale mirror. The
+apply flow re-reads the pending after the confirm dialog and compares
+`createdAt` before consuming it (guards against another tab applying it first
+or a newer payload superseding a parked dialog). Cancelling a confirm marks the
+payload `dismissedAt` — it stops auto-prompting and stays available behind the
+panel's Apply/Discard buttons. Live-apply via `GM_addValueChangeListener` only
+prompts in visible tabs. All localStorage writers distinguish a missing
+envelope (recreated) from a *corrupt* one (abort with a toast, never
+overwritten).
