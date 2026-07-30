@@ -35,11 +35,13 @@ function sampleTrackerState() {
       ignoreElementalResistance: 10, summonDuration: 20,
     },
     serverType: 'heroic',
+    // mastery/boost/common are keyed by per-class node id (slug_tier_index),
+    // matching the live tracker's storage; skillNodes is a plain array.
     hexaProgress: {
       skillNodes: [30, 30, 1, null, null, null],
-      mastery: { 0: 30, 1: 10 },
-      boost: { 0: 21, 3: 7 },
-      common: { 0: 25, 1: 3 },
+      mastery: { sia_mastery_0: 30, sia_mastery_1: 10 },
+      boost: { sia_boost_0: 21, sia_boost_3: 7 },
+      common: { sia_common_0: 25, sia_common_1: 3 },
     },
   };
 }
@@ -142,11 +144,11 @@ test('scouter -> tracker maps stats correctly', () => {
   assert.equal(cs.critDamagePercent, 101.5);
   assert.equal(cs.weaponMultiplier, S.TRACKER_CLASS_CONFIGS['Sia'].wm);
   assert.equal(cs.statModel, 'normal');
-  // hexa
+  // hexa — keyed by the target class's node ids
   assert.deepEqual(patch.hexaProgress.skillNodes, [30, null, null, null, null, null]);
-  assert.deepEqual(patch.hexaProgress.mastery, { 1: 10 });
-  assert.deepEqual(patch.hexaProgress.boost, { 3: 7 });
-  assert.deepEqual(patch.hexaProgress.common, { 0: 25, 1: 3 });
+  assert.deepEqual(patch.hexaProgress.mastery, { sia_mastery_1: 10 });
+  assert.deepEqual(patch.hexaProgress.boost, { sia_boost_3: 7 });
+  assert.deepEqual(patch.hexaProgress.common, { sia_common_0: 25, sia_common_1: 3 });
   assert.equal(patch.hexaAssumptionMode, 'explicit');
 });
 
@@ -165,8 +167,32 @@ test('round-trip preserves mapped stat fields', () => {
   assert.equal(patch.arcanePower, state.arcanePower);
   assert.equal(patch.sacredPower, state.sacredPower);
   assert.deepEqual(patch.hexaProgress.skillNodes, state.hexaProgress.skillNodes);
+  assert.deepEqual(patch.hexaProgress.mastery, state.hexaProgress.mastery);
+  assert.deepEqual(patch.hexaProgress.boost, state.hexaProgress.boost);
+  assert.deepEqual(patch.hexaProgress.common, state.hexaProgress.common);
   // finalDamagePercent must be preserved from current state, not zeroed
   assert.equal(b.finalDamagePercent, a.finalDamagePercent);
+});
+
+test('tracker class slug matches live node-id prefixes', () => {
+  assert.equal(S.trackerClassSlug('Shade'), 'shade');
+  assert.equal(S.trackerClassSlug('Dark Knight'), 'dark_knight');
+  assert.equal(S.trackerClassSlug('Fire/Poison'), 'fire_poison');
+  assert.equal(S.trackerClassSlug('Ice/Lightning'), 'ice_lightning');
+  assert.equal(S.trackerClassSlug('Mo Xuan'), 'mo_xuan');
+  assert.equal(S.trackerClassSlug('Angelic Buster'), 'angelic_buster');
+  assert.equal(S.trackerClassSlug(null), null);
+});
+
+test('legacy numeric hexa keys still export (old mirrored data)', () => {
+  const state = sampleTrackerState();
+  state.hexaProgress = {
+    skillNodes: [30, null, null, null, null, null],
+    mastery: { 0: 12 }, boost: {}, common: { 0: 19 },
+  };
+  const out = S.trackerToScouter(state, null);
+  assert.equal(out.hexa.masteryCore1, '12');
+  assert.equal(out.huntSkill.solJanus, '19');
 });
 
 test('demon avenger and xenon class metadata', () => {
@@ -200,10 +226,12 @@ test('unknown class: stats imported, class untouched', () => {
   const us = structuredClone(S.SCOUTER_DEFAULT_USERSTAT);
   us.stat.myClass = '레테';
   us.stat.mainStatBase = '12345';
+  us.hexa.skillCore1 = '30'; // Lethe hexa must not be attributed to another class
   const { patch, mappedClass } = S.scouterToTracker(us, null);
   assert.equal(mappedClass, null);
   assert.ok(!('selectedClass' in patch));
   assert.equal(patch.characterStats.primaryStat, 12345);
+  assert.ok(!('hexaProgress' in patch));
 });
 
 test('clamps: ignoreDef > 100, hexa above cap, crit above 100', () => {

@@ -78,18 +78,31 @@ userscript verbatim).
 
 ### `hexaProgress`
 
-`{skillNodes: [6 × (number|null)], mastery: {"0".."3": level}, boost:
-{"0".."3": level}, common: {"0".."3": level}}`. Node order matches
-MapleScouter's per-class hexa tables (verified via shared Korean skill names in
-both bundles):
+`{skillNodes: [6 × (number|null)], mastery: {nodeId: level}, boost:
+{nodeId: level}, common: {nodeId: level}}`. **Only `skillNodes` is
+index-keyed** — the other three tiers are keyed by per-class node id
+`{classSlug}_{tier}_{index}` (e.g. `shade_mastery_0`, `dark_knight_common_1`),
+where `classSlug` = class name lowercased with non-alphanumerics collapsed to
+`_` (`Fire/Poison` → `fire_poison`, `Mo Xuan` → `mo_xuan`; verified against
+all 52 slugs in the live bundle and against live localStorage written by the
+hexa page UI). The store's `setHexaSkillLevel(tier, ref, level)` writes
+`{[tier]: {...prev, [String(ref)]: level}}` with `ref` = node id for these
+tiers, and the score/recommendation readers look levels up by the same ids —
+numeric keys are silently ignored. Node order matches MapleScouter's
+per-class hexa tables (verified via shared Korean skill names in both
+bundles):
 
 | tracker | scouter |
 |---|---|
 | `skillNodes[i]` | `hexa.skillCore{i+1}` |
-| `mastery[String(i)]` | `hexa.masteryCore{i+1}` |
-| `boost[String(i)]` | `hexa.reinCore{i+1}` |
-| `common["0"]` (Sol Janus) | `huntSkill.solJanus` |
-| `common["1".."3"]` (Sol Hekate, class common VI, unreleased) | `hexa.generalCore2..4` |
+| `mastery["{slug}_mastery_{i}"]` | `hexa.masteryCore{i+1}` |
+| `boost["{slug}_boost_{i}"]` | `hexa.reinCore{i+1}` |
+| `common["{slug}_common_0"]` (Sol Janus) | `huntSkill.solJanus` |
+| `common["{slug}_common_1..3"]` (Sol Hekate, class common VI, unreleased) | `hexa.generalCore2..4` |
+
+Because the ids embed the class, a scouter→tracker import only carries hexa
+when the class maps (otherwise there is no valid slug to key the nodes on),
+and a tracker→scouter export reconstructs ids from `selectedClass`.
 
 ## Field mapping (sync contract)
 

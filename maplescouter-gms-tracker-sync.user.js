@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MapleScouter ⇄ GMS Upgrade Tracker Sync
 // @namespace    https://github.com/tomerh2001/maplescouter-gms-tracker-sync
-// @version      1.0.0
+// @version      1.1.0
 // @description  Sync character inputs between maplescouter.com/en/input and gms-upgrade-tracker.vercel.app using Tampermonkey storage as a cross-site bridge.
 // @author       tomerh2001
 // @homepageURL  https://github.com/tomerh2001/maplescouter-gms-tracker-sync
@@ -334,11 +334,23 @@
 
   const clampLevel = (n, max) => Math.max(0, Math.min(max, Math.round(n)));
 
-  // tracker hexaProgress -> scouter {hexa, solJanus}
-  function hexaTrackerToScouter(hp, baseHexa, baseSolJanus) {
+  // The tracker keys hexaProgress.mastery/boost/common by per-class node id
+  // ("shade_mastery_0", "dark_knight_common_1", ...); only skillNodes is a
+  // plain index array. The id prefix is the class name slugified like this
+  // (verified against all 52 ids in the live bundle: fire_poison, mo_xuan...).
+  const trackerClassSlug = (en) =>
+    typeof en === 'string' ? en.toLowerCase().replace(/[^a-z0-9]+/g, '_') : null;
+
+  // tracker hexaProgress -> scouter {hexa, solJanus}; classEn is the tracker's
+  // selectedClass, needed to reconstruct the node-id keys.
+  function hexaTrackerToScouter(hp, baseHexa, baseSolJanus, classEn) {
     const hexa = { ...baseHexa };
     let solJanus = baseSolJanus;
     if (!hp || typeof hp !== 'object') return { hexa, solJanus };
+    const slug = trackerClassSlug(classEn);
+    // Legacy numeric keys are accepted as a fallback for old mirrored data.
+    const nodeLevel = (tier, i) =>
+      (slug ? hp[tier]?.[`${slug}_${tier}_${i}`] : undefined) ?? hp[tier]?.[String(i)] ?? 0;
     const nodes = Array.isArray(hp.skillNodes) ? hp.skillNodes : [];
     for (let i = 0; i < 6; i++) {
       // The tracker only models 2 origin-type skill nodes per class; a null
@@ -348,20 +360,23 @@
       }
     }
     for (let i = 0; i < 4; i++) {
-      hexa[`masteryCore${i + 1}`] = str(clampLevel(num(hp.mastery?.[String(i)] ?? 0), 30));
-      hexa[`reinCore${i + 1}`] = str(clampLevel(num(hp.boost?.[String(i)] ?? 0), 30));
+      hexa[`masteryCore${i + 1}`] = str(clampLevel(num(nodeLevel('mastery', i)), 30));
+      hexa[`reinCore${i + 1}`] = str(clampLevel(num(nodeLevel('boost', i)), 30));
     }
     for (let i = 1; i < 4; i++) {
-      hexa[`generalCore${i + 1}`] = str(clampLevel(num(hp.common?.[String(i)] ?? 0), 30));
+      hexa[`generalCore${i + 1}`] = str(clampLevel(num(nodeLevel('common', i)), 30));
     }
-    const sj = clampLevel(num(hp.common?.['0'] ?? 0), 30);
+    const sj = clampLevel(num(nodeLevel('common', 0)), 30);
     if (sj > 0) solJanus = str(sj);
     return { hexa, solJanus };
   }
 
-  // scouter {hexa, huntSkill} -> tracker hexaProgress (or null if all empty)
-  function hexaScouterToTracker(hexa, huntSkill) {
+  // scouter {hexa, huntSkill} -> tracker hexaProgress (or null if all empty /
+  // no class to key the node ids on).
+  function hexaScouterToTracker(hexa, huntSkill, classEn) {
     if (!hexa || typeof hexa !== 'object') return null;
+    const slug = trackerClassSlug(classEn);
+    if (!slug) return null;
     const hp = HEXA_EMPTY();
     let any = false;
     for (let i = 0; i < 6; i++) {
@@ -370,19 +385,19 @@
     }
     for (let i = 0; i < 4; i++) {
       const m = clampLevel(num(hexa[`masteryCore${i + 1}`]), 30);
-      if (m > 0) { hp.mastery[String(i)] = m; any = true; }
+      if (m > 0) { hp.mastery[`${slug}_mastery_${i}`] = m; any = true; }
       const b = clampLevel(num(hexa[`reinCore${i + 1}`]), 30);
-      if (b > 0) { hp.boost[String(i)] = b; any = true; }
+      if (b > 0) { hp.boost[`${slug}_boost_${i}`] = b; any = true; }
     }
     for (let i = 1; i < 4; i++) {
       const g = clampLevel(num(hexa[`generalCore${i + 1}`]), 30);
-      if (g > 0) { hp.common[String(i)] = g; any = true; }
+      if (g > 0) { hp.common[`${slug}_common_${i}`] = g; any = true; }
     }
     // solJanus is "30" in scouter's *default* template, so it only counts as
     // real progress when some actual hexa core is set.
     if (any) {
       const sj = clampLevel(num(huntSkill?.solJanus), 30);
-      if (sj > 0) hp.common['0'] = sj;
+      if (sj > 0) hp.common[`${slug}_common_0`] = sj;
     }
     return any ? hp : null;
   }
@@ -393,7 +408,8 @@
     const base = clone(baseUserStat ?? SCOUTER_DEFAULT_USERSTAT);
     const ko = CLASS_EN_TO_KO[trackerState.selectedClass];
     const { hexa, solJanus } = hexaTrackerToScouter(
-      trackerState.hexaProgress, base.hexa, base.huntSkill?.solJanus ?? '0');
+      trackerState.hexaProgress, base.hexa, base.huntSkill?.solJanus ?? '0',
+      trackerState.selectedClass);
 
     const level = num(trackerState.characterLevel);
     const stat = {
@@ -501,7 +517,7 @@
     const level = Math.round(num(s.level));
     const arcane = Math.round(num(s.arcaneForce));
     const sacred = Math.round(num(s.authenticForce));
-    const hexaProgress = hexaScouterToTracker(userStat.hexa, userStat.huntSkill);
+    const hexaProgress = hexaScouterToTracker(userStat.hexa, userStat.huntSkill, en);
 
     const patch = {
       characterStats: stats,
@@ -1027,7 +1043,7 @@
   // Test hook: expose pure pieces and skip browser boot (no-op under Tampermonkey).
   if (globalThis.__MS_SYNC_TEST__) {
     Object.assign(globalThis.__MS_SYNC_TEST__, {
-      num, str, round, clampLevel,
+      num, str, round, clampLevel, trackerClassSlug,
       trackerToScouter, scouterToTracker,
       hexaTrackerToScouter, hexaScouterToTracker,
       CLASS_EN_TO_KO, CLASS_KO_TO_EN, TRACKER_CLASS_CONFIGS,
